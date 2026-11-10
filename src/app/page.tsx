@@ -1,13 +1,10 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { createBrowserClient } from '@supabase/ssr';
 import { ArrowDownRight, ArrowUpRight, Search, Sparkles, Compass, ChevronDown } from 'lucide-react';
 
 type Pin = { id: string; title: string; description: string | null; image_url: string; affiliate_url: string; category: string; price: string | null; published: boolean };
 const categories = ['Everything', 'Home & Living', 'Style', 'Tech', 'Beauty', 'Everyday'];
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 export default function Home() {
   const [pins, setPins] = useState<Pin[]>([]);
@@ -16,22 +13,25 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!supabaseUrl || !supabaseKey) { setLoading(false); return; }
-    const supabase = createBrowserClient(supabaseUrl, supabaseKey);
-    supabase.from('pins').select('id,title,description,image_url,affiliate_url,category,price,published')
-      .eq('published', true).order('created_at', { ascending: false })
-      .then(({ data }) => { setPins(data || []); setLoading(false); });
+    let alive = true;
+    fetch('/api/pins')
+      .then(async response => {
+        if (!response.ok) throw new Error('Could not load picks');
+        return response.json();
+      })
+      .then(data => { if (alive) setPins(data.pins || []); })
+      .catch(() => { if (alive) setPins([]); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
   }, []);
 
-  const visible = useMemo(() => pins.filter((pin) =>
+  const visible = useMemo(() => pins.filter(pin =>
     (active === 'Everything' || pin.category === active) &&
     [pin.title, pin.description || '', pin.category].join(' ').toLowerCase().includes(query.toLowerCase())
   ), [pins, active, query]);
 
   const trackClick = (id: string) => {
-    if (!supabaseUrl || !supabaseKey) return;
-    const supabase = createBrowserClient(supabaseUrl, supabaseKey);
-    void supabase.rpc('record_pin_click', { pin_id: id });
+    void fetch(`/api/pins/${id}/click`, { method: 'POST', keepalive: true });
   };
 
   return (
